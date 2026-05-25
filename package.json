@@ -1,0 +1,14 @@
+{
+  "name": "survive-the-horde",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A browser multiplayer pixel art tower defense survival prototype.",
+  "scripts": {
+    "build": "npm --prefix client run build",
+    "start": "node server.js",
+    "dev": "npm run build && node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}

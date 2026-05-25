@@ -1,0 +1,35 @@
+{
+  "name": "survive-the-horde",
+  "version": "0.1.0",
+  "description": "Multiplayer tower defense pixel art game",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": "18.x",
+    "npm": "9.x"
+  },
+  "scripts": {
+    "build": "npm --prefix client run build",
+    "start": "node server.js",
+    "dev": "npm run build && node server.js",
+    "dev:server-only": "node server.js",
+    "dev:watch": "npm --prefix client run dev"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {},
+  "author": "Your Name",
+  "license": "MIT",
+  "keywords": [
+    "game",
+    "tower-defense",
+    "multiplayer",
+    "websocket",
+    "pixel-art"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/survive-the-horde"
+  }
+}

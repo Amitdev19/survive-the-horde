@@ -1,0 +1,16 @@
+# Render Deployment Configuration
+# Deploy to Render.com with this file
+
+services:
+  - type: web
+    name: survive-the-horde
+    env: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000

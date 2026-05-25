@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Survive the Horde</title>
+  </head>
+  <body>
+    <main class="game-shell">
+      <section class="topbar" aria-label="Match status">
+        <div class="brand">
+          <span class="mark"></span>
+          <div>
+            <h1>Survive the Horde</h1>
+            <p id="statusLine">Connecting...</p>
+          </div>
+        </div>
+
+        <div class="meters">
+          <div class="resource"><span>Wood</span><strong id="woodCount">0</strong></div>
+          <div class="resource"><span>Stone</span><strong id="stoneCount">0</strong></div>
+          <div class="resource"><span>Food</span><strong id="foodCount">0</strong></div>
+          <div class="base-meter" aria-label="Base health">
+            <span>Base</span>
+            <div class="bar"><i id="baseBar"></i></div>
+            <strong id="baseHp">0</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="play-area">
+        <div id="game-root" aria-label="Survive the Horde game canvas"></div>
+        <aside class="side-panel" aria-label="Build controls">
+          <div class="match-card">
+            <span>Wave</span>
+            <strong id="waveCount">0</strong>
+            <small id="worldState">Day / Clear</small>
+          </div>
+          <div class="match-card">
+            <span>Squad</span>
+            <strong id="playerCount">0</strong>
+            <small id="roomState">room meadow</small>
+          </div>
+          <div class="tower-list" id="towerButtons"></div>
+          <button class="action-button" id="upgradeButton" type="button">Upgrade</button>
+          <button class="action-button" id="repairButton" type="button">Repair Base</button>
+          <button class="action-button muted" id="soundButton" type="button">Sound Off</button>
+          <button class="action-button danger" id="restartButton" type="button">Restart</button>
+        </aside>
+      </section>
+
+      <div class="interaction-toast" id="interactionToast" hidden>
+        <strong id="interactionTitle">Gather</strong>
+        <span id="interactionText">Click nearby supplies</span>
+      </div>
+
+      <div class="loading-screen" id="loadingScreen">
+        <div class="loader-card">
+          <div class="loader-mark"></div>
+          <strong>Survive the Horde</strong>
+          <span id="loadingText">Loading camp...</span>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

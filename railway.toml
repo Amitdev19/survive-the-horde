@@ -1,0 +1,14 @@
+# Railway.app Deployment Configuration
+# Just commit this file and Railway auto-deploys
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm start"
+restartPolicyMaxRetries = 3
+
+[environments]
+production:
+  PORT = "3000"
+  NODE_ENV = "production"
