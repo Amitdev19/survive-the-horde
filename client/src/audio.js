@@ -3,6 +3,11 @@ export class Chiptune {
     this.context = null;
     this.enabled = false;
     this.musicTimer = null;
+    this.volume = 0.7;
+  }
+
+  setVolume(value) {
+    this.volume = Math.max(0, Math.min(1, value));
   }
 
   toggle() {
@@ -23,7 +28,7 @@ export class Chiptune {
       warning: [160, 90, 0.24, "sawtooth", 0.08],
     };
     const [from, to, duration, wave, volume] = presets[kind] || presets.gather;
-    this.tone(from, to, duration, wave, volume);
+    this.tone(from, to, duration, wave, volume * this.volume);
   }
 
   tone(from, to, duration, wave = "square", volume = 0.06) {
@@ -47,7 +52,7 @@ export class Chiptune {
     let index = 0;
     this.musicTimer = window.setInterval(() => {
       if (!this.enabled || !this.context) return;
-      this.tone(notes[index % notes.length], notes[(index + 2) % notes.length], 0.14, "triangle", 0.018);
+      this.tone(notes[index % notes.length], notes[(index + 2) % notes.length], 0.14, "triangle", 0.018 * this.volume);
       index += 1;
     }, 420);
   }

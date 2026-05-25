@@ -1,4 +1,4 @@
-const fs = require("fs");
+const express = require("express");
 const http = require("http");
 const path = require("path");
 const WebSocket = require("ws");
@@ -9,40 +9,27 @@ const BROADCAST_RATE = 15;
 const TICK_RATE = 30;
 const STATIC_ROOT = path.join(__dirname, "client", "dist");
 const DEFAULT_ROOM = "meadow";
+const MAX_PLAYERS_PER_ROOM = 16;
+const EMPTY_ROOM_TTL = 1000 * 60 * 8;
 
 const TOWER_DEFS = {
-  arrow: { label: "Archer", cost: { wood: 30 }, damage: 12, range: 150, cooldown: 0.46, splash: 0 },
-  cannon: { label: "Cannon", cost: { wood: 18, stone: 36 }, damage: 32, range: 132, cooldown: 1.12, splash: 42 },
-  frost: {
-    label: "Frost",
-    cost: { stone: 24, food: 12 },
-    damage: 7,
-    range: 118,
-    cooldown: 0.36,
-    splash: 0,
-    slow: 0.56,
-    slowDuration: 1.6,
-  },
-  garden: { label: "Garden", cost: { wood: 24, food: 8 }, damage: 0, range: 0, cooldown: 0, splash: 0, produceEvery: 7 },
+  arrow: { label: "Archer", cost: { wood: 25 }, damage: 10, range: 140, cooldown: 0.4, splash: 0 },
+  cannon: { label: "Cannon", cost: { wood: 15, stone: 30 }, damage: 28, range: 120, cooldown: 1.0, splash: 40 },
+  frost: { label: "Frost", cost: { stone: 20, food: 10 }, damage: 6, range: 110, cooldown: 0.35, slow: 0.6, slowDuration: 1.5 },
+  garden: { label: "Garden", cost: { wood: 20, food: 6 }, damage: 0, range: 0, cooldown: 0, produceEvery: 6 },
+  laser: { label: "Laser", cost: { stone: 36, wood: 18, crystal: 4 }, damage: 18, range: 180, cooldown: 0.5, pierce: 3, unlockTier: 2 },
+  bomb: { label: "Bomb", cost: { wood: 32, stone: 22, crystal: 4 }, damage: 40, range: 100, cooldown: 1.2, splash: 70, unlockTier: 2 },
+  tesla: { label: "Tesla", cost: { stone: 46, food: 14, crystal: 7 }, damage: 15, range: 130, cooldown: 0.6, splash: 42, chain: 2, unlockTier: 3 },
+  sniper: { label: "Sniper", cost: { wood: 36, stone: 20, crystal: 8 }, damage: 50, range: 200, cooldown: 1.8, pierceAll: true, unlockTier: 3 },
 };
 
 const ENEMY_DEFS = {
   grunt: { hp: 42, speed: 48, damage: 9, reward: { wood: 2 }, score: 8 },
   runner: { hp: 24, speed: 82, damage: 6, reward: { food: 1 }, score: 10 },
-  brute: { hp: 118, speed: 34, damage: 20, reward: { stone: 3 }, score: 24 },
+  brute: { hp: 118, speed: 34, damage: 20, reward: { stone: 3, crystal: 1 }, score: 24 },
 };
 
 const PLAYER_COLORS = ["#e56b3f", "#77c6d8", "#a7d56e", "#d9b45f", "#b83b3b", "#87919e"];
-
-const MIME = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".png": "image/png",
-  ".svg": "image/svg+xml",
-  ".ico": "image/x-icon",
-};
 
 let nextPlayerId = 1;
 let nextSessionId = 1;
@@ -57,6 +44,8 @@ class GameRoom {
     this.nextNodeId = 1;
     this.nextShotId = 1;
     this.nextEventId = 1;
+    this.createdAt = Date.now();
+    this.lastEmptyAt = null;
     this.events = [];
     this.state = this.createInitialState();
   }
@@ -88,11 +77,13 @@ class GameRoom {
       weather: "clear",
       weatherTimer: 38,
       nextWaveIn: 4,
+      nextSupplyIn: 28,
       pendingSpawns: [],
       wave: 0,
       score: 0,
-      resources: { wood: 96, stone: 68, food: 34 },
-      base: { x: 160, y: 288, hp: 390, maxHp: 390 },
+      techTier: 1,
+      resources: { wood: 96, stone: 68, food: 34, crystal: 0 },
+      base: { x: 160, y: 288, hp: 430, maxHp: 430 },
       towers: [],
       enemies: [],
       nodes: this.createResourceNodes(),
@@ -105,22 +96,10 @@ class GameRoom {
 
   createResourceNodes() {
     const seeds = [
-      ["wood", 80, 76],
-      ["wood", 114, 136],
-      ["wood", 285, 82],
-      ["wood", 415, 486],
-      ["wood", 520, 88],
-      ["wood", 760, 438],
-      ["wood", 870, 110],
-      ["stone", 90, 486],
-      ["stone", 270, 446],
-      ["stone", 586, 148],
-      ["stone", 842, 324],
-      ["stone", 724, 88],
-      ["food", 230, 166],
-      ["food", 382, 372],
-      ["food", 628, 430],
-      ["food", 806, 206],
+      ["wood", 80, 76], ["wood", 114, 136], ["wood", 285, 82], ["wood", 415, 486],
+      ["wood", 520, 88], ["wood", 760, 438], ["wood", 870, 110],
+      ["stone", 90, 486], ["stone", 270, 446], ["stone", 586, 148], ["stone", 842, 324], ["stone", 724, 88],
+      ["food", 230, 166], ["food", 382, 372], ["food", 628, 430], ["food", 806, 206],
     ];
 
     return seeds.map(([type, x, y]) => {
@@ -130,7 +109,14 @@ class GameRoom {
   }
 
   addSession(session) {
+    if (this.sessions.size >= MAX_PLAYERS_PER_ROOM) {
+      session.socket.send(JSON.stringify({ type: "error", message: "Room is full." }));
+      session.socket.close(1008, "room full");
+      return false;
+    }
+
     this.sessions.add(session);
+    this.lastEmptyAt = null;
     const spawnOffset = Object.keys(this.state.players).length;
     this.state.players[session.playerId] = {
       id: session.playerId,
@@ -145,18 +131,20 @@ class GameRoom {
       lastSeen: Date.now(),
     };
     this.pushEvent("join", this.state.players[session.playerId].x, this.state.players[session.playerId].y, "joined");
+    return true;
   }
 
   removeSession(session) {
     this.sessions.delete(session);
     delete this.state.players[session.playerId];
-    this.pushEvent("leave", 160, 288, "left");
+    if (this.sessions.size === 0) this.lastEmptyAt = Date.now();
+    this.pushEvent("leave", this.state.base.x, this.state.base.y - 42, "left");
   }
 
   restart() {
     this.state = this.createInitialState(this.state.players);
     this.events = [];
-    this.pushEvent("restart", this.state.base.x, this.state.base.y, "new run");
+    this.pushEvent("restart", this.state.base.x, this.state.base.y - 42, "new run");
   }
 
   handleMessage(session, message) {
@@ -166,9 +154,7 @@ class GameRoom {
 
     if (message.type === "hello") {
       player.name = sanitizeName(message.name || player.name);
-      if (message.roomId && message.roomId !== this.id) {
-        moveSessionToRoom(session, message.roomId);
-      }
+      if (message.roomId && message.roomId !== this.id) moveSessionToRoom(session, message.roomId);
       return;
     }
 
@@ -192,24 +178,10 @@ class GameRoom {
       return;
     }
 
-    if (message.type === "interact") {
-      this.gatherResource(player, message.targetId);
-      return;
-    }
-
-    if (message.type === "build") {
-      this.buildTower(player, message.towerType, message.x, message.y);
-      return;
-    }
-
-    if (message.type === "upgrade") {
-      this.upgradeTower(message.towerId);
-      return;
-    }
-
-    if (message.type === "repair") {
-      this.repairBase(player);
-    }
+    if (message.type === "interact") return this.gatherResource(player, message.targetId);
+    if (message.type === "build") return this.buildTower(player, message.towerType, message.x, message.y);
+    if (message.type === "upgrade") return this.upgradeTower(message.towerId);
+    if (message.type === "repair") this.repairBase(player);
   }
 
   gatherResource(player, targetId) {
@@ -241,14 +213,9 @@ class GameRoom {
 
     const x = snap(rawX);
     const y = snap(rawY);
-    if (!canSpend(this.state.resources, def.cost)) {
-      this.pushEvent("deny", player.x, player.y - 18, "need resources");
-      return;
-    }
-    if (!this.isBuildable(x, y)) {
-      this.pushEvent("deny", x, y - 18, "blocked");
-      return;
-    }
+    if ((def.unlockTier || 1) > this.state.techTier) return this.pushEvent("deny", player.x, player.y - 18, `tech ${def.unlockTier}`);
+    if (!canSpend(this.state.resources, def.cost)) return this.pushEvent("deny", player.x, player.y - 18, "need resources");
+    if (!this.isBuildable(x, y)) return this.pushEvent("deny", x, y - 18, "blocked");
 
     spend(this.state.resources, def.cost);
     this.state.towers.push({ id: `t${this.nextTowerId++}`, type, x, y, level: 1, cooldown: type === "garden" ? def.produceEvery : 0.2 });
@@ -262,6 +229,7 @@ class GameRoom {
 
     const cost = { wood: 12 + tower.level * 10, stone: 8 + tower.level * 7 };
     if (tower.type === "garden" || tower.type === "frost") cost.food = 4 + tower.level * 3;
+    if ((TOWER_DEFS[tower.type].unlockTier || 1) > 1) cost.crystal = tower.level + 2;
     if (!canSpend(this.state.resources, cost)) return;
 
     spend(this.state.resources, cost);
@@ -275,9 +243,9 @@ class GameRoom {
     const cost = { wood: 12, stone: 8, food: 5 };
     if (!canSpend(this.state.resources, cost) || this.state.base.hp >= this.state.base.maxHp) return;
     spend(this.state.resources, cost);
-    this.state.base.hp = Math.min(this.state.base.maxHp, this.state.base.hp + 44);
+    this.state.base.hp = Math.min(this.state.base.maxHp, this.state.base.hp + 48);
     this.state.message = `${player.name} repaired the base.`;
-    this.pushEvent("repair", this.state.base.x, this.state.base.y - 42, "+44 base");
+    this.pushEvent("repair", this.state.base.x, this.state.base.y - 42, "+48 base");
   }
 
   isBuildable(x, y) {
@@ -296,6 +264,7 @@ class GameRoom {
     this.updateWeather(dt);
     this.updatePlayers(dt);
     this.updateResourceNodes(dt);
+    this.updateSupplyDrops(dt);
     this.updateWaves(dt);
     this.updateEnemies(dt);
     this.updateTowers(dt);
@@ -346,6 +315,20 @@ class GameRoom {
     });
   }
 
+  updateSupplyDrops(dt) {
+    this.state.nextSupplyIn -= dt;
+    if (this.state.nextSupplyIn > 0) return;
+
+    const playerCount = Math.max(1, Object.keys(this.state.players).length);
+    this.state.resources.wood += 10 + playerCount * 3;
+    this.state.resources.stone += 7 + playerCount * 2;
+    this.state.resources.food += 5 + playerCount;
+    this.state.resources.crystal += Math.max(1, Math.floor(this.state.wave / 2));
+    this.state.nextSupplyIn = Math.max(18, 32 - this.state.wave * 0.8);
+    this.state.message = "A shared supply cache arrived.";
+    this.pushEvent("resource", this.state.base.x, this.state.base.y - 52, "supply cache");
+  }
+
   updateWaves(dt) {
     this.state.nextWaveIn -= dt;
     if (this.state.nextWaveIn <= 0) this.startWave();
@@ -362,7 +345,9 @@ class GameRoom {
 
   startWave() {
     this.state.wave += 1;
-    const count = 5 + Math.floor(this.state.wave * 1.65);
+    this.updateTechTier();
+    const playerScale = Math.max(0, Object.keys(this.state.players).length - 1);
+    const count = 5 + Math.floor(this.state.wave * 1.65) + playerScale * 2;
     for (let index = 0; index < count; index += 1) {
       let type = "grunt";
       const roll = Math.random();
@@ -374,6 +359,16 @@ class GameRoom {
     this.state.nextWaveIn = Math.max(14, 30 - this.state.wave * 0.55);
     this.state.message = `Wave ${this.state.wave} approaches.`;
     this.pushEvent("wave", this.state.base.x, 58, `wave ${this.state.wave}`);
+  }
+
+  updateTechTier() {
+    const nextTier = this.state.wave >= 5 ? 3 : this.state.wave >= 3 ? 2 : 1;
+    if (nextTier > this.state.techTier) {
+      this.state.techTier = nextTier;
+      this.state.resources.crystal += nextTier === 2 ? 4 : 6;
+      this.state.message = `Tech tier ${nextTier} unlocked.`;
+      this.pushEvent("upgrade", this.state.base.x, this.state.base.y - 54, `tech ${nextTier}`);
+    }
   }
 
   spawnEnemy(type) {
@@ -398,9 +393,7 @@ class GameRoom {
       enemy.slowTimer = Math.max(0, enemy.slowTimer - dt);
       enemy.hurtFlash = Math.max(0, enemy.hurtFlash - dt);
 
-      const auraTower = this.state.towers.find(
-        (tower) => tower.type === "garden" && distance(tower.x, tower.y, enemy.x, enemy.y) < 74 + tower.level * 10,
-      );
+      const auraTower = this.state.towers.find((tower) => tower.type === "garden" && distance(tower.x, tower.y, enemy.x, enemy.y) < 74 + tower.level * 10);
       const slow = enemy.slowTimer > 0 || auraTower ? 0.6 : 1;
       const speed = def.speed * mods.enemySpeed * slow;
       const angle = Math.atan2(this.state.base.y - enemy.y, this.state.base.x - enemy.x);
@@ -423,14 +416,10 @@ class GameRoom {
 
       if (tower.type === "garden") {
         tower.cooldown -= dt;
-        const nightPenalty = this.isNight() ? 1.55 : 1;
-        const weatherPenalty = this.state.weather === "storm" ? 1.45 : 1;
         if (tower.cooldown <= 0) {
           this.state.resources.food += 2 + tower.level;
-          if (this.state.base.hp < this.state.base.maxHp && !this.isNight()) {
-            this.state.base.hp = Math.min(this.state.base.maxHp, this.state.base.hp + tower.level);
-          }
-          tower.cooldown = def.produceEvery * nightPenalty * weatherPenalty;
+          if (this.state.base.hp < this.state.base.maxHp && !this.isNight()) this.state.base.hp = Math.min(this.state.base.maxHp, this.state.base.hp + tower.level);
+          tower.cooldown = def.produceEvery * (this.isNight() ? 1.55 : 1) * (this.state.weather === "storm" ? 1.45 : 1);
           this.pushEvent("resource", tower.x, tower.y - 22, `+${2 + tower.level} food`);
         }
         return;
@@ -444,15 +433,15 @@ class GameRoom {
       if (!target) return;
 
       const damage = def.damage * (1 + (tower.level - 1) * 0.36);
+      const damaged = [target];
       this.applyDamage(target, damage);
-      if (def.splash) {
-        this.state.enemies.forEach((enemy) => {
-          if (enemy.id !== target.id && distance(enemy.x, enemy.y, target.x, target.y) < def.splash) this.applyDamage(enemy, damage * 0.46);
-        });
-      }
-      if (def.slow) target.slowTimer = Math.max(target.slowTimer, def.slowDuration);
 
-      this.state.shots.push({ id: `s${this.nextShotId++}`, type: tower.type, x: tower.x, y: tower.y, tx: target.x, ty: target.y, ttl: 0.22 });
+      if (def.pierce || def.pierceAll) this.applyPierce(tower, target, range, damage, damaged, def);
+      if (def.splash) this.applySplash(target, damage, damaged, def.splash);
+      if (def.chain) this.applyChain(target, damage, damaged, def);
+      if (def.slow) damaged.forEach((enemy) => (enemy.slowTimer = Math.max(enemy.slowTimer, def.slowDuration)));
+
+      this.state.shots.push({ id: `s${this.nextShotId++}`, type: tower.type, x: tower.x, y: tower.y, tx: target.x, ty: target.y, ttl: 0.22, damaged: damaged.length });
       tower.cooldown = def.cooldown * mods.fireDelay * Math.max(0.62, 1 - (tower.level - 1) * 0.08);
     });
 
@@ -464,6 +453,41 @@ class GameRoom {
       this.pushEvent("defeat", enemy.x, enemy.y - 16, `+${def.score}`);
       return false;
     });
+  }
+
+  applyPierce(tower, target, range, damage, damaged, def) {
+    const direction = Math.atan2(target.y - tower.y, target.x - tower.x);
+    this.state.enemies.forEach((enemy) => {
+      if (enemy.id === target.id || damaged.includes(enemy)) return;
+      const angle = Math.atan2(enemy.y - tower.y, enemy.x - tower.x);
+      const diff = Math.abs(Math.atan2(Math.sin(angle - direction), Math.cos(angle - direction)));
+      const limit = def.pierceAll ? Number.POSITIVE_INFINITY : def.pierce + 1;
+      if (diff < (def.pierceAll ? 0.25 : 0.3) && distance(enemy.x, enemy.y, tower.x, tower.y) < range && damaged.length < limit) {
+        this.applyDamage(enemy, damage * (def.pierceAll ? 0.5 : 0.7));
+        damaged.push(enemy);
+      }
+    });
+  }
+
+  applySplash(target, damage, damaged, radius) {
+    this.state.enemies.forEach((enemy) => {
+      if (damaged.includes(enemy)) return;
+      if (distance(enemy.x, enemy.y, target.x, target.y) < radius) {
+        this.applyDamage(enemy, damage * 0.45);
+        damaged.push(enemy);
+      }
+    });
+  }
+
+  applyChain(target, damage, damaged, def) {
+    let current = target;
+    for (let index = 0; index < def.chain; index += 1) {
+      const nextTarget = nearest(this.state.enemies.filter((enemy) => !damaged.includes(enemy)), current.x, current.y, def.range * 0.6);
+      if (!nextTarget) break;
+      this.applyDamage(nextTarget, damage * (0.6 - index * 0.1));
+      damaged.push(nextTarget);
+      current = nextTarget;
+    }
   }
 
   applyDamage(enemy, damage) {
@@ -497,7 +521,7 @@ class GameRoom {
 
   pushEvent(type, x, y, text) {
     this.events.push({ id: `v${this.nextEventId++}`, type, x, y, text, time: this.state.time });
-    if (this.events.length > 36) this.events.splice(0, this.events.length - 36);
+    if (this.events.length > 48) this.events.splice(0, this.events.length - 48);
   }
 
   snapshot() {
@@ -512,7 +536,9 @@ class GameRoom {
       weatherTimer: this.state.weatherTimer,
       wave: this.state.wave,
       nextWaveIn: this.state.nextWaveIn,
+      nextSupplyIn: this.state.nextSupplyIn,
       score: this.state.score,
+      techTier: this.state.techTier,
       resources: this.state.resources,
       base: this.state.base,
       towers: this.state.towers,
@@ -524,7 +550,12 @@ class GameRoom {
       gameOver: this.state.gameOver,
       message: this.state.message,
       towerDefs: TOWER_DEFS,
+      unlockedTowers: Object.entries(TOWER_DEFS).filter(([, def]) => (def.unlockTier || 1) <= this.state.techTier).map(([type]) => type),
     };
+  }
+
+  summary() {
+    return { id: this.id, players: this.sessions.size, wave: this.state.wave, score: this.state.score, techTier: this.state.techTier, createdAt: this.createdAt };
   }
 
   broadcast() {
@@ -547,44 +578,7 @@ function moveSessionToRoom(session, roomId) {
   if (session.room === nextRoom) return;
   session.room.removeSession(session);
   session.room = nextRoom;
-  nextRoom.addSession(session);
-  session.socket.send(JSON.stringify({ type: "welcome", playerId: session.playerId, roomId: nextRoom.id }));
-}
-
-function serveStatic(req, res) {
-  const requestUrl = new URL(req.url, "http://localhost");
-  let pathname = decodeURIComponent(requestUrl.pathname);
-  if (pathname === "/") pathname = "/index.html";
-
-  const filePath = path.normalize(path.join(STATIC_ROOT, pathname));
-  if (!filePath.startsWith(STATIC_ROOT)) {
-    res.writeHead(403);
-    res.end("Forbidden");
-    return;
-  }
-
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      const indexPath = path.join(STATIC_ROOT, "index.html");
-      fs.readFile(indexPath, (indexErr, indexData) => {
-        if (indexErr) {
-          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-          res.end("Build the client first with: npm run build");
-          return;
-        }
-        res.writeHead(200, { "content-type": MIME[".html"] });
-        res.end(indexData);
-      });
-      return;
-    }
-
-    const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, {
-      "content-type": MIME[ext] || "application/octet-stream",
-      "cache-control": ext === ".html" ? "no-cache" : "public, max-age=31536000",
-    });
-    res.end(data);
-  });
+  if (nextRoom.addSession(session)) session.socket.send(JSON.stringify({ type: "welcome", playerId: session.playerId, roomId: nextRoom.id }));
 }
 
 function sanitizeName(name) {
@@ -596,7 +590,7 @@ function sanitizeRoomId(roomId) {
 }
 
 function canSpend(resources, cost) {
-  return Object.entries(cost).every(([key, amount]) => resources[key] >= amount);
+  return Object.entries(cost).every(([key, amount]) => (resources[key] || 0) >= amount);
 }
 
 function spend(resources, cost) {
@@ -607,7 +601,7 @@ function spend(resources, cost) {
 
 function addResources(resources, reward) {
   Object.entries(reward).forEach(([key, amount]) => {
-    resources[key] += amount;
+    resources[key] = (resources[key] || 0) + amount;
   });
 }
 
@@ -636,18 +630,53 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-const server = http.createServer(serveStatic);
+function roomList() {
+  return [...rooms.values()].map((room) => room.summary());
+}
+
+const app = express();
+app.disable("x-powered-by");
+app.use(express.json({ limit: "16kb" }));
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    rooms: rooms.size,
+    players: [...rooms.values()].reduce((sum, room) => sum + room.sessions.size, 0),
+    uptime: process.uptime(),
+  });
+});
+
+app.get("/api/rooms", (_req, res) => {
+  res.json({ rooms: roomList() });
+});
+
+app.post("/api/rooms", (_req, res) => {
+  const roomId = `room-${Math.random().toString(36).slice(2, 8)}`;
+  getRoom(roomId);
+  res.status(201).json({ roomId, path: `/?room=${encodeURIComponent(roomId)}` });
+});
+
+app.use(express.static(STATIC_ROOT, { index: false, maxAge: "1y" }));
+app.get(/.*/, (_req, res) => {
+  res.sendFile(path.join(STATIC_ROOT, "index.html"), (error) => {
+    if (error) res.status(404).send("Build the client first with: npm run build");
+  });
+});
+
+const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-wss.on("connection", (socket) => {
+wss.on("connection", (socket, req) => {
+  const requestUrl = new URL(req.url || "/", "http://localhost");
   const session = {
     id: `s${nextSessionId++}`,
     playerId: `p${nextPlayerId++}`,
     socket,
-    room: getRoom(DEFAULT_ROOM),
+    room: getRoom(requestUrl.searchParams.get("room") || DEFAULT_ROOM),
   };
 
-  session.room.addSession(session);
+  if (!session.room.addSession(session)) return;
   socket.send(JSON.stringify({ type: "welcome", playerId: session.playerId, roomId: session.room.id }));
 
   socket.on("message", (raw) => {
@@ -668,7 +697,7 @@ wss.on("connection", (socket) => {
 setInterval(() => {
   rooms.forEach((room, id) => {
     room.update(1 / TICK_RATE);
-    if (room.sessions.size === 0 && id !== DEFAULT_ROOM && room.state.time > 60) rooms.delete(id);
+    if (room.sessions.size === 0 && id !== DEFAULT_ROOM && room.lastEmptyAt && Date.now() - room.lastEmptyAt > EMPTY_ROOM_TTL) rooms.delete(id);
   });
 }, 1000 / TICK_RATE);
 
@@ -688,5 +717,5 @@ server.on("error", (error) => {
 
 server.listen(selectedPort, "0.0.0.0", () => {
   console.log(`Survive the Horde is running at http://localhost:${selectedPort}`);
-  console.log("Open the same URL in another browser tab for multiplayer.");
+  console.log("Use /?room=your-room-name to invite players to a shared room.");
 });

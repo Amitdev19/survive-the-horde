@@ -20,6 +20,7 @@
           <div class="resource"><span>Wood</span><strong id="woodCount">0</strong></div>
           <div class="resource"><span>Stone</span><strong id="stoneCount">0</strong></div>
           <div class="resource"><span>Food</span><strong id="foodCount">0</strong></div>
+          <div class="resource"><span>Crystal</span><strong id="crystalCount">0</strong></div>
           <div class="base-meter" aria-label="Base health">
             <span>Base</span>
             <div class="bar"><i id="baseBar"></i></div>
@@ -41,7 +42,14 @@
             <strong id="playerCount">0</strong>
             <small id="roomState">room meadow</small>
           </div>
+          <div class="match-card">
+            <span>Tech</span>
+            <strong id="techTier">1</strong>
+            <small id="supplyState">supply soon</small>
+          </div>
           <div class="tower-list" id="towerButtons"></div>
+          <button class="action-button" id="inviteButton" type="button">Copy Invite</button>
+          <button class="action-button" id="newRoomButton" type="button">New Room</button>
           <button class="action-button" id="upgradeButton" type="button">Upgrade</button>
           <button class="action-button" id="repairButton" type="button">Repair Base</button>
           <button class="action-button muted" id="soundButton" type="button">Sound Off</button>
@@ -59,6 +67,99 @@
           <div class="loader-mark"></div>
           <strong>Survive the Horde</strong>
           <span id="loadingText">Loading camp...</span>
+        </div>
+      </div>
+
+      <!-- Settings Modal -->
+      <div class="modal" id="settingsModal" hidden>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Settings</h2>
+            <button class="close-btn" id="closeSettings">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="setting-group">
+              <label>Volume</label>
+              <input type="range" id="volumeSlider" min="0" max="100" value="70" class="slider">
+              <span id="volumeValue">70%</span>
+            </div>
+            <div class="setting-group">
+              <label>Graphics Quality</label>
+              <select id="graphicsSelect">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div class="setting-group">
+              <label>
+                <input type="checkbox" id="screenShakeToggle" checked> Screen Shake
+              </label>
+            </div>
+            <div class="setting-group">
+              <label>
+                <input type="checkbox" id="particlesToggle" checked> Particles
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls Modal -->
+      <div class="modal" id="controlsModal" hidden>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Controls</h2>
+            <button class="close-btn" id="closeControls">✕</button>
+          </div>
+          <div class="modal-body controls-list">
+            <div class="control-row">
+              <kbd>W / A / S / D</kbd>
+              <span>Move Character</span>
+            </div>
+            <div class="control-row">
+              <kbd>Click</kbd>
+              <span>Gather Resources / Build Tower</span>
+            </div>
+            <div class="control-row">
+              <kbd>Select Tower</kbd>
+              <span>Choose Tower Type</span>
+            </div>
+            <div class="control-row">
+              <kbd>Upgrade</kbd>
+              <span>Enhance Selected Tower</span>
+            </div>
+            <div class="control-row">
+              <kbd>Repair Base</kbd>
+              <span>Restore Base Health</span>
+            </div>
+            <hr>
+            <h3>Tower Types</h3>
+            <div class="tower-info">
+              <strong>🏹 Archer</strong> - Fast attacks, balanced damage
+            </div>
+            <div class="tower-info">
+              <strong>💣 Cannon</strong> - High damage, splash radius
+            </div>
+            <div class="tower-info">
+              <strong>❄️ Frost</strong> - Slows enemies, crowd control
+            </div>
+            <div class="tower-info">
+              <strong>🌾 Garden</strong> - Generates resources
+            </div>
+            <div class="tower-info">
+              <strong>⚡ Laser</strong> - Pierces through enemies
+            </div>
+            <div class="tower-info">
+              <strong>⚙️ Tesla</strong> - Chain lightning attacks
+            </div>
+            <div class="tower-info">
+              <strong>💥 Bomb</strong> - Explosive splash damage
+            </div>
+            <div class="tower-info">
+              <strong>🎯 Sniper</strong> - One-shot high damage
+            </div>
+          </div>
         </div>
       </div>
     </main>

@@ -1,9 +1,11 @@
-# Railway.app Deployment Configuration
-# Just commit this file and Railway auto-deploys
-
 [build]
-builder = "RAILPACK"
+builder = "nixpacks"
+buildCommand = "npm install && npm --prefix client install && npm run build"
 
 [deploy]
 startCommand = "npm start"
+restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+
+[variables]
+NODE_ENV = "production"

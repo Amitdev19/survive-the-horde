@@ -5,16 +5,21 @@ import { PALETTE, PIXEL_ATLAS } from "./pixelAtlas.js";
 
 const WORLD = { width: 960, height: 576, tile: 32 };
 const TOWER_UI = {
-  arrow: { label: "Archer", key: "tower_arrow", cost: { wood: 30 } },
-  cannon: { label: "Cannon", key: "tower_cannon", cost: { wood: 18, stone: 36 } },
-  frost: { label: "Frost", key: "tower_frost", cost: { stone: 24, food: 12 } },
-  garden: { label: "Garden", key: "tower_garden", cost: { wood: 24, food: 8 } },
+  arrow: { label: "Archer", key: "tower_arrow", cost: { wood: 25 }, tier: 1 },
+  cannon: { label: "Cannon", key: "tower_cannon", cost: { wood: 15, stone: 30 }, tier: 1 },
+  frost: { label: "Frost", key: "tower_frost", cost: { stone: 20, food: 10 }, tier: 1 },
+  garden: { label: "Garden", key: "tower_garden", cost: { wood: 20, food: 6 }, tier: 1 },
+  laser: { label: "Laser", key: "tower_laser", cost: { stone: 36, wood: 18, crystal: 4 }, tier: 2 },
+  bomb: { label: "Bomb", key: "tower_bomb", cost: { wood: 32, stone: 22, crystal: 4 }, tier: 2 },
+  tesla: { label: "Tesla", key: "tower_tesla", cost: { stone: 46, food: 14, crystal: 7 }, tier: 3 },
+  sniper: { label: "Sniper", key: "tower_sniper", cost: { wood: 36, stone: 20, crystal: 8 }, tier: 3 },
 };
 
 const dom = {
   wood: document.querySelector("#woodCount"),
   stone: document.querySelector("#stoneCount"),
   food: document.querySelector("#foodCount"),
+  crystal: document.querySelector("#crystalCount"),
   baseBar: document.querySelector("#baseBar"),
   baseHp: document.querySelector("#baseHp"),
   status: document.querySelector("#statusLine"),
@@ -27,11 +32,24 @@ const dom = {
   restart: document.querySelector("#restartButton"),
   playerCount: document.querySelector("#playerCount"),
   roomState: document.querySelector("#roomState"),
+  techTier: document.querySelector("#techTier"),
+  supplyState: document.querySelector("#supplyState"),
+  invite: document.querySelector("#inviteButton"),
+  newRoom: document.querySelector("#newRoomButton"),
   loading: document.querySelector("#loadingScreen"),
   loadingText: document.querySelector("#loadingText"),
   interactionToast: document.querySelector("#interactionToast"),
   interactionTitle: document.querySelector("#interactionTitle"),
   interactionText: document.querySelector("#interactionText"),
+  settingsModal: document.querySelector("#settingsModal"),
+  controlsModal: document.querySelector("#controlsModal"),
+  closeSettings: document.querySelector("#closeSettings"),
+  closeControls: document.querySelector("#closeControls"),
+  volumeSlider: document.querySelector("#volumeSlider"),
+  volumeValue: document.querySelector("#volumeValue"),
+  graphicsSelect: document.querySelector("#graphicsSelect"),
+  screenShakeToggle: document.querySelector("#screenShakeToggle"),
+  particlesToggle: document.querySelector("#particlesToggle"),
 };
 
 const audio = new Chiptune();
@@ -45,8 +63,10 @@ let sceneRef = null;
 let lastGatherSent = 0;
 let lastSnapshot = null;
 let lastPingSent = 0;
+const requestedRoom = getRoomFromUrl();
 
 createTowerButtons();
+setupSettingsUI();
 connect();
 
 new Phaser.Game({
@@ -429,6 +449,8 @@ window.setInterval(() => {
 dom.upgrade.addEventListener("click", upgradeSelected);
 dom.repair.addEventListener("click", repairBase);
 dom.restart.addEventListener("click", () => send({ type: "restart" }));
+dom.invite.addEventListener("click", copyInviteLink);
+dom.newRoom.addEventListener("click", createNewRoom);
 dom.sound.addEventListener("click", () => {
   const enabled = audio.toggle();
   dom.sound.textContent = enabled ? "Sound On" : "Sound Off";
@@ -452,18 +474,98 @@ function createTowerButtons() {
   });
 }
 
+function setupSettingsUI() {
+  if (!dom.volumeSlider) return;
+
+  // Volume control
+  dom.volumeSlider.addEventListener("change", (e) => {
+    const volume = e.target.value;
+    dom.volumeValue.textContent = volume + "%";
+    audio.setVolume(volume / 100);
+    localStorage.setItem("gameVolume", volume);
+  });
+
+  // Load saved settings
+  const savedVolume = localStorage.getItem("gameVolume");
+  if (savedVolume) {
+    dom.volumeSlider.value = savedVolume;
+    dom.volumeValue.textContent = savedVolume + "%";
+    audio.setVolume(savedVolume / 100);
+  }
+
+  // Graphics quality
+  dom.graphicsSelect.addEventListener("change", (e) => {
+    localStorage.setItem("graphicsQuality", e.target.value);
+  });
+
+  // Toggle settings
+  dom.screenShakeToggle.addEventListener("change", (e) => {
+    localStorage.setItem("screenShake", e.target.checked);
+  });
+
+  dom.particlesToggle.addEventListener("change", (e) => {
+    localStorage.setItem("particles", e.target.checked);
+  });
+
+  // Load saved toggles
+  dom.screenShakeToggle.checked = localStorage.getItem("screenShake") !== "false";
+  dom.particlesToggle.checked = localStorage.getItem("particles") !== "false";
+
+  // Modal controls
+  // Settings button in side panel
+  const settingsBtn = document.createElement("button");
+  settingsBtn.className = "action-button";
+  settingsBtn.textContent = "Settings";
+  settingsBtn.addEventListener("click", () => {
+    dom.settingsModal.removeAttribute("hidden");
+  });
+  dom.towerButtons.parentElement.insertBefore(settingsBtn, dom.upgrade);
+
+  // Controls button in side panel
+  const controlsBtn = document.createElement("button");
+  controlsBtn.className = "action-button";
+  controlsBtn.textContent = "Controls";
+  controlsBtn.addEventListener("click", () => {
+    dom.controlsModal.removeAttribute("hidden");
+  });
+  dom.towerButtons.parentElement.insertBefore(controlsBtn, dom.upgrade);
+
+  // Close buttons
+  dom.closeSettings.addEventListener("click", () => {
+    dom.settingsModal.setAttribute("hidden", "");
+  });
+
+  dom.closeControls.addEventListener("click", () => {
+    dom.controlsModal.setAttribute("hidden", "");
+  });
+
+  // Click outside modal to close
+  dom.settingsModal.addEventListener("click", (e) => {
+    if (e.target === dom.settingsModal) {
+      dom.settingsModal.setAttribute("hidden", "");
+    }
+  });
+
+  dom.controlsModal.addEventListener("click", (e) => {
+    if (e.target === dom.controlsModal) {
+      dom.controlsModal.setAttribute("hidden", "");
+    }
+  });
+}
+
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const port = location.port === "5173" ? "3000" : location.port;
-  const url = `${protocol}//${location.hostname}${port ? `:${port}` : ""}`;
+  const roomQuery = requestedRoom ? `?room=${encodeURIComponent(requestedRoom)}` : "";
+  const url = `${protocol}//${location.hostname}${port ? `:${port}` : ""}${roomQuery}`;
   socket = new WebSocket(url);
 
   socket.addEventListener("open", () => {
     const name = localStorage.getItem("hordeName") || `Scout ${Math.floor(Math.random() * 90 + 10)}`;
     localStorage.setItem("hordeName", name);
-    send({ type: "hello", name });
+    send({ type: "hello", name, roomId: requestedRoom });
     dom.status.textContent = "Connected";
-    dom.loadingText.textContent = "Joining meadow...";
+    dom.loadingText.textContent = `Joining ${requestedRoom || "meadow"}...`;
   });
 
   socket.addEventListener("message", (event) => {
@@ -512,12 +614,15 @@ function updateHud(snapshot) {
   dom.wood.textContent = Math.floor(snapshot.resources.wood);
   dom.stone.textContent = Math.floor(snapshot.resources.stone);
   dom.food.textContent = Math.floor(snapshot.resources.food);
+  dom.crystal.textContent = Math.floor(snapshot.resources.crystal || 0);
   dom.baseHp.textContent = `${Math.ceil(snapshot.base.hp)}/${snapshot.base.maxHp}`;
   dom.baseBar.style.width = `${Math.max(0, (snapshot.base.hp / snapshot.base.maxHp) * 100)}%`;
   dom.wave.textContent = snapshot.wave;
   dom.worldState.textContent = `${snapshot.isNight ? "Night" : "Day"} / ${capitalize(snapshot.weather)}`;
   dom.playerCount.textContent = snapshot.playerCount || snapshot.players.length;
   dom.roomState.textContent = `room ${snapshot.roomId || "meadow"}`;
+  dom.techTier.textContent = snapshot.techTier || 1;
+  dom.supplyState.textContent = `${Math.max(0, Math.ceil(snapshot.nextSupplyIn || 0))}s supply`;
   dom.status.textContent = snapshot.gameOver ? "Base destroyed" : snapshot.message;
   dom.upgrade.disabled = !selectedTowerId;
 
@@ -533,8 +638,10 @@ function updateHud(snapshot) {
 
   document.querySelectorAll(".tower-button").forEach((button) => {
     const type = button.dataset.type;
+    const unlocked = snapshot.unlockedTowers?.includes(type) ?? (TOWER_UI[type].tier <= (snapshot.techTier || 1));
     button.classList.toggle("active", type === selectedTowerType);
-    button.disabled = !canAfford(TOWER_UI[type].cost, snapshot.resources);
+    button.classList.toggle("locked", !unlocked);
+    button.disabled = !unlocked || !canAfford(TOWER_UI[type].cost, snapshot.resources);
   });
 }
 
@@ -579,7 +686,7 @@ function createTextures(scene) {
 }
 
 function drawPreview(canvas, key) {
-  const rows = PIXEL_ATLAS[key].rows;
+  const rows = (PIXEL_ATLAS[key] || PIXEL_ATLAS.tower_arrow).rows;
   const context = canvas.getContext("2d");
   context.imageSmoothingEnabled = false;
   const pixel = Math.floor(canvas.width / rows[0].length);
@@ -640,7 +747,7 @@ function canAfford(cost, resources) {
 
 function formatCost(cost) {
   return Object.entries(cost)
-    .map(([key, value]) => `${key[0].toUpperCase()}${value}`)
+    .map(([key, value]) => `${key === "crystal" ? "C" : key[0].toUpperCase()}${value}`)
     .join(" ");
 }
 
@@ -675,4 +782,33 @@ function drawBitmapLabel(scene, text, x, y, key) {
       .setDepth(12);
   }
   scene[key].setText(text).setPosition(x, y).setVisible(true);
+}
+
+
+function getRoomFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return (params.get("room") || "meadow").replace(/[^\w-]/g, "").slice(0, 24) || "meadow";
+}
+
+async function copyInviteLink() {
+  const roomId = latestState?.roomId || requestedRoom || "meadow";
+  const url = new URL(window.location.href);
+  url.searchParams.set("room", roomId);
+  try {
+    await navigator.clipboard.writeText(url.toString());
+    dom.status.textContent = "Invite link copied.";
+  } catch {
+    dom.status.textContent = url.toString();
+  }
+}
+
+async function createNewRoom() {
+  try {
+    const response = await fetch("/api/rooms", { method: "POST" });
+    const data = await response.json();
+    window.location.href = data.path;
+  } catch {
+    const roomId = `room-${Math.random().toString(36).slice(2, 8)}`;
+    window.location.href = `/?room=${roomId}`;
+  }
 }

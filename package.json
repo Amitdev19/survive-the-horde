@@ -9,6 +9,7 @@
     "dev": "npm run build && node server.js"
   },
   "dependencies": {
+    "express": "^5.2.1",
     "ws": "^8.21.0"
   }
 }
