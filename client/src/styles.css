@@ -590,6 +590,41 @@ p {
   color: #a7d56e;
 }
 
+/* Stats Container (Game Over Screen) */
+.stats-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid #141820;
+  border-radius: 4px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid rgba(231, 224, 194, 0.1);
+}
+
+.stat-row:last-child {
+  border-bottom: none;
+}
+
+.stat-row span {
+  color: #e7e0c2;
+  font-size: 0.95rem;
+}
+
+.stat-row strong {
+  color: #a7d56e;
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+
 /* Mobile-specific settings button */
 .settings-btn {
   position: fixed;

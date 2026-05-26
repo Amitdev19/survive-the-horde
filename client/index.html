@@ -53,6 +53,7 @@
           <button class="action-button" id="upgradeButton" type="button">Upgrade</button>
           <button class="action-button" id="repairButton" type="button">Repair Base</button>
           <button class="action-button muted" id="soundButton" type="button">Sound Off</button>
+          <button class="action-button" id="pauseButton" type="button">⏸ Pause</button>
           <button class="action-button danger" id="restartButton" type="button">Restart</button>
         </aside>
       </section>
@@ -100,6 +101,57 @@
               <label>
                 <input type="checkbox" id="particlesToggle" checked> Particles
               </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pause Modal -->
+      <div class="modal" id="pauseModal" hidden>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Game Paused</h2>
+          </div>
+          <div class="modal-body" style="text-align: center;">
+            <p>The game is paused. Click Resume to continue.</p>
+            <button class="action-button" id="resumeButton" style="margin-top: 20px;">Resume Game</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Game Over Modal -->
+      <div class="modal" id="gameOverModal" hidden>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Base Destroyed!</h2>
+          </div>
+          <div class="modal-body">
+            <div class="stats-container">
+              <div class="stat-row">
+                <span>Waves Survived</span>
+                <strong id="statsWaves">0</strong>
+              </div>
+              <div class="stat-row">
+                <span>Enemies Defeated</span>
+                <strong id="statsEnemies">0</strong>
+              </div>
+              <div class="stat-row">
+                <span>Towers Built</span>
+                <strong id="statsTowers">0</strong>
+              </div>
+              <div class="stat-row">
+                <span>Resources Gathered</span>
+                <strong id="statsResources">0</strong>
+              </div>
+              <div class="stat-row">
+                <span>Final Score</span>
+                <strong id="statsScore" style="color: #FFD700;">0</strong>
+              </div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap;">
+              <button class="action-button" id="retryButton" style="flex: 1; min-width: 120px;">Retry</button>
+              <button class="action-button" id="newRoomGameOverButton" style="flex: 1; min-width: 120px;">New Room</button>
+              <button class="action-button muted" id="shareScoreButton" style="flex: 1; min-width: 120px;">Share Score</button>
             </div>
           </div>
         </div>

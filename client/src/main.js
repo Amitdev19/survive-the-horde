@@ -29,6 +29,7 @@ const dom = {
   upgrade: document.querySelector("#upgradeButton"),
   repair: document.querySelector("#repairButton"),
   sound: document.querySelector("#soundButton"),
+  pause: document.querySelector("#pauseButton"),
   restart: document.querySelector("#restartButton"),
   playerCount: document.querySelector("#playerCount"),
   roomState: document.querySelector("#roomState"),
@@ -50,6 +51,17 @@ const dom = {
   graphicsSelect: document.querySelector("#graphicsSelect"),
   screenShakeToggle: document.querySelector("#screenShakeToggle"),
   particlesToggle: document.querySelector("#particlesToggle"),
+  pauseModal: document.querySelector("#pauseModal"),
+  resumeButton: document.querySelector("#resumeButton"),
+  gameOverModal: document.querySelector("#gameOverModal"),
+  statsWaves: document.querySelector("#statsWaves"),
+  statsEnemies: document.querySelector("#statsEnemies"),
+  statsTowers: document.querySelector("#statsTowers"),
+  statsResources: document.querySelector("#statsResources"),
+  statsScore: document.querySelector("#statsScore"),
+  retryButton: document.querySelector("#retryButton"),
+  newRoomGameOverButton: document.querySelector("#newRoomGameOverButton"),
+  shareScoreButton: document.querySelector("#shareScoreButton"),
 };
 
 const audio = new Chiptune();
@@ -63,6 +75,13 @@ let sceneRef = null;
 let lastGatherSent = 0;
 let lastSnapshot = null;
 let lastPingSent = 0;
+let isPaused = false;
+let gameStats = {
+  wavesSurvived: 0,
+  enemiesDefeated: 0,
+  towersBuild: 0,
+  resourcesGathered: 0,
+};
 const requestedRoom = getRoomFromUrl();
 
 createTowerButtons();
@@ -422,6 +441,10 @@ new Phaser.Game({
 window.addEventListener("keydown", (event) => {
   keysDown.add(event.code);
   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault();
+  if (event.code === "Escape") {
+    togglePause();
+    event.preventDefault();
+  }
   if (event.code === "Digit1") selectTower("arrow");
   if (event.code === "Digit2") selectTower("cannon");
   if (event.code === "Digit3") selectTower("frost");
@@ -551,6 +574,47 @@ function setupSettingsUI() {
       dom.controlsModal.setAttribute("hidden", "");
     }
   });
+
+  // Pause button
+  dom.pause.addEventListener("click", togglePause);
+
+  // Resume button
+  dom.resumeButton.addEventListener("click", togglePause);
+
+  // Game over buttons
+  dom.retryButton.addEventListener("click", () => {
+    send({ type: "restart" });
+    dom.gameOverModal.setAttribute("hidden", "");
+    isPaused = false;
+    gameStats = { wavesSurvived: 0, enemiesDefeated: 0, towersBuild: 0, resourcesGathered: 0 };
+  });
+
+  dom.newRoomGameOverButton.addEventListener("click", () => {
+    window.location.href = "/";
+  });
+
+  dom.shareScoreButton.addEventListener("click", () => {
+    const score = latestState?.score || 0;
+    const waves = gameStats.wavesSurvived;
+    const text = `I survived ${waves} waves with a score of ${score} in Survive the Horde!`;
+    const url = window.location.href;
+    if (navigator.share) {
+      navigator.share({ title: "Survive the Horde", text, url });
+    } else {
+      // Fallback: copy to clipboard
+      const shareUrl = `${text}\n${url}`;
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        alert("Score copied to clipboard!");
+      });
+    }
+  });
+
+  // Click outside modal to close (but not pause modal)
+  dom.gameOverModal.addEventListener("click", (e) => {
+    if (e.target === dom.gameOverModal) {
+      // Don't allow closing game over modal by clicking outside
+    }
+  });
 }
 
 function connect() {
@@ -611,6 +675,13 @@ function sendMovement() {
 }
 
 function updateHud(snapshot) {
+  // Check if game is over and show game over screen
+  if (snapshot.gameOver && !dom.gameOverModal.hasAttribute("hidden")) {
+    // Already showing game over screen
+  } else if (snapshot.gameOver && dom.gameOverModal.hasAttribute("hidden")) {
+    showGameOver();
+  }
+
   dom.wood.textContent = Math.floor(snapshot.resources.wood);
   dom.stone.textContent = Math.floor(snapshot.resources.stone);
   dom.food.textContent = Math.floor(snapshot.resources.food);
@@ -743,6 +814,48 @@ function findNearestResource(player, nodes, maxDistance) {
 
 function canAfford(cost, resources) {
   return Object.entries(cost).every(([key, amount]) => (resources?.[key] || 0) >= amount);
+}
+
+function togglePause() {
+  isPaused = !isPaused;
+  if (isPaused) {
+    dom.pauseModal.removeAttribute("hidden");
+    dom.pause.textContent = "⏯ Resume";
+    send({ type: "pause" });
+  } else {
+    dom.pauseModal.setAttribute("hidden", "");
+    dom.pause.textContent = "⏸ Pause";
+    send({ type: "resume" });
+  }
+}
+
+function showGameOver() {
+  dom.gameOverModal.removeAttribute("hidden");
+  dom.pause.setAttribute("disabled", "true");
+  dom.pause.textContent = "⏸ Pause";
+  
+  // Update stats display
+  if (latestState) {
+    const score = latestState.score || 0;
+    const wave = latestState.wave || 0;
+    const enemies = latestState.enemies?.length || 0;
+    const towers = latestState.towers?.length || 0;
+    const resources = (latestState.resources?.wood || 0) + 
+                     (latestState.resources?.stone || 0) + 
+                     (latestState.resources?.food || 0) +
+                     (latestState.resources?.crystal || 0);
+    
+    dom.statsWaves.textContent = wave;
+    dom.statsEnemies.textContent = enemies;
+    dom.statsTowers.textContent = towers;
+    dom.statsResources.textContent = resources;
+    dom.statsScore.textContent = score;
+    
+    gameStats.wavesSurvived = wave;
+    gameStats.enemiesDefeated = enemies;
+    gameStats.towersBuild = towers;
+    gameStats.resourcesGathered = resources;
+  }
 }
 
 function formatCost(cost) {
